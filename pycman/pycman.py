@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 import threading
@@ -175,6 +177,63 @@ class ProgressBar:
         )
         sys.stdout.write(out_str)
         sys.stdout.flush()
+
+    @staticmethod
+    def get_color_code(color: str) -> str:
+        """Retrieve the ANSI escape code for a specified color name.
+
+        Parameters
+        ----------
+        color : str
+            The name of the color to look up (e.g., 'red', 'BLUE').
+            Case-insensitive.
+
+        Returns
+        -------
+        str
+            The ANSI escape code string corresponding to the color.
+
+        Raises
+        ------
+        ValueError
+            If the requested color name does not exist within the available
+            ProgressBar attributes.
+        """
+        try:
+            getattr(ProgressBar, color.upper())
+        except AttributeError:
+            raise ValueError(
+                f"Color '{color}' not available."
+                " Available colors: [gray, red, green, yellow, blue]"
+            )
+
+    @staticmethod
+    def format_text(txt: str, *, bold: bool = False, color: str | None = None) -> str:
+        """Return a formatted string with optionally added ANSI color and boldness.
+
+        Parameters
+        ----------
+        txt : str
+            The text to be formatted.
+        bold : bool, optional
+            If True, applies bold styling to the text. Default is False.
+        color : str | None, optional
+            The color name to apply to the text (e.g., 'red', 'blue').
+            Only supported colors in ProgressBar are valid. Default is None.
+
+        Returns
+        -------
+        str
+            The formatted string wrapped in the appropriate ANSI escape codes.
+        """
+        if not bold and not color:
+            return txt
+
+        bold_ansi = ProgressBar.BOLD if bold else ""
+        color_ansi = ProgressBar.get_color_code(color) if color else ""
+        reset_ansi = ProgressBar.RESET if color else ProgressBar.RESET_BOLD
+
+        return f"{bold_ansi}{color_ansi}{txt}{reset_ansi}"
 
     def update(self, increment: int = 1):
         """Update the current step.
