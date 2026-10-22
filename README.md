@@ -12,7 +12,7 @@ You can install the package locally from source in editable mode:
 
 ```bash
 pip install -e .
-
+```
 
 ---
 
@@ -35,7 +35,6 @@ with ProgressBar(max_steps=total_steps, prefix="Loading:", color_gradient=True) 
             pb.log("Reached halfway point!")
             
         pb.update(1)
-
 ```
 
 ---
