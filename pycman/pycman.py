@@ -1,21 +1,13 @@
 from __future__ import annotations
 
-import os
-import sys
 import threading
 import time
 from collections.abc import Iterable
 
+from .term import RGB, ColorLevel, TermMan
 
-class ProgressBar:
-    RESET = "\033[0m"
-    RESET_BOLD = "\033[22m"
-    BOLD = "\033[1m"
-    GRAY = "\033[90m"
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    YELLOW = "\033[33m"
-    BLUE = "\033[34m"
+
+class PycBar:
     # DONE_CHAR = "█"
     # REMAINING_CHAR = "░"
     # REMAINING_CHAR = "▕"
@@ -23,6 +15,7 @@ class ProgressBar:
     REMAINING_CHAR = "·"
     SPINNER_CHARS = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
     PACMAN_CHARS = ("C", "C", "C", "C", "C", "c", "c", "c", "c", "c")
+    MIN_BAR_WIDTH = 10
 
     def __init__(
         self,
@@ -32,13 +25,15 @@ class ProgressBar:
         postfix: str = "",
         color_gradient: bool = True,
         show_spinner: bool = True,
+        term: TermMan | None = None,
     ):
+        self.term = term or TermMan()
         self.max_steps = max(1, max_steps)
         self.width = bar_width
         self.curr_step = 0
         self.progress = 0.0
-        self.color_gradient = color_gradient
         self.show_spinner = show_spinner
+        self.color_gradient = color_gradient and self.term.color_level > ColorLevel.NONE
         self._prefix = f"{prefix} " if prefix and not prefix[-1].isspace() else prefix
         self._postfix = (
             f"{postfix} " if postfix and not postfix[-1].isspace() else postfix
@@ -47,14 +42,10 @@ class ProgressBar:
         self.start_time = time.time()
         self.spinner_idx = 0
 
+        self._active = False
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
-        self._animation_thread = None
-
-        self.supports_truecolor = os.environ.get("COLORTERM", "").lower() in (
-            "truecolor",
-            "24bit",
-        )
+        self._animation_thread: threading.Thread | None = None
 
     @property
     def prefix(self):
@@ -75,26 +66,28 @@ class ProgressBar:
     def __enter__(self):
         self.start_time = time.time()
         self._stop_event.clear()
-
-        self._animation_thread = threading.Thread(
-            target=self._refresh_loop, daemon=True
-        )
-        self._animation_thread.start()
+        self._active = True
+        if self.term.is_tty:
+            self.term.hide_cursor()
+            self._animation_thread = threading.Thread(
+                target=self._refresh_loop, daemon=True
+            )
+            self._animation_thread.start()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._stop_event.set()
         if self._animation_thread:
             self._animation_thread.join()
-
+            self._animation_thread = None
         with self._lock:
-            if self.curr_step < self.max_steps and exc_type is None:
-                self.curr_step = self.max_steps
-                self.progress = 1.0
-
-            self._draw_ui(force_complete=(exc_type is None))
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+            ok = exc_type is None
+            if ok and self.curr_step < self.max_steps:
+                self.curr_step, self.progress = self.max_steps, 1.0
+            self._draw_ui(force_complete=ok)
+            self.term.write("\n")
+            self.term.show_cursor()
+            self._active = False
 
     def _refresh_loop(self):
         """Runs in the background, updating the spinner frame even if the main thread is stuck."""
@@ -103,9 +96,10 @@ class ProgressBar:
                 self._draw_ui()
                 if self.show_spinner:
                     self.spinner_idx = (self.spinner_idx + 1) % len(self.SPINNER_CHARS)
-            time.sleep(0.05)
+            self._stop_event.wait(0.05)
 
-    def get_gradient_color(self) -> str:
+    def _gradient_rgb(self) -> RGB:
+        # TODO: Need to make it more generic. Work with any colors sequences
         if self.progress < 0.5:
             fraction = self.progress / 0.5
             r = 255
@@ -117,123 +111,61 @@ class ProgressBar:
             g = 255
             b = 0
 
-        if self.supports_truecolor:
-            return f"\033[38;2;{r};{g};{b}m"
-        else:
-            r_idx = int(r / 255 * 5)
-            g_idx = int(g / 255 * 5)
-            b_idx = int(b / 255 * 5)
-            color_id = 16 + (36 * r_idx) + (6 * g_idx) + b_idx
-            return f"\033[38;5;{color_id}m"
+        return r, g, b
 
-    def _draw_ui(self, force_complete: bool = False):
-        """Internal low-level render function."""
-        done_width = round(self.progress * self.width)
-        remain_width = max(0, self.width - done_width)
+    def _eta_str(self) -> str:
+        if self.curr_step <= 0:
+            return "--:--"
+        elapsed = max(time.time() - self.start_time, 1e-9)
+        steps_per_sec = self.curr_step / elapsed
+        eta_seconds = (self.max_steps - self.curr_step) / steps_per_sec
+        mins, secs = divmod(int(eta_seconds), 60)
+        return f"{mins:02d}:{secs:02d}"
 
-        if self.color_gradient:
-            color = self.get_gradient_color()
-            reset = self.RESET
-            # gray = self.GRAY
-        else:
-            color = ""
-            reset = ""
-            # gray = ""
-
+    def _build(self, bar_width: int, force_complete: bool) -> str:
+        done_width = round(self.progress * bar_width)
+        remain_width = max(0, bar_width - done_width)
         pacman_char = self.PACMAN_CHARS[self.spinner_idx % len(self.PACMAN_CHARS)]
-        if done_width > 0:
-            filled_bar = self.DONE_CHAR * (done_width - 1) + pacman_char
-        else:
-            filled_bar = ""
-
+        filled_bar = (
+            self.DONE_CHAR * (done_width - 1) + pacman_char if done_width > 0 else ""
+        )
         empty_bar = self.REMAINING_CHAR * remain_width
 
-        elapsed = time.time() - self.start_time
-
-        if self.curr_step > 0:
-            steps_per_sec = self.curr_step / elapsed
-            remaining_steps = self.max_steps - self.curr_step
-            eta_seconds = remaining_steps / steps_per_sec
-            mins, secs = divmod(int(eta_seconds), 60)
-            eta_str = f"{mins:02d}:{secs:02d}"
-        else:
-            eta_str = "--:--"
+        color = self._gradient_rgb() if self.color_gradient else None
 
         spinner_str = ""
         if self.show_spinner:
-            if self.curr_step >= self.max_steps or force_complete:
-                spinner_str = f"{color}✓{reset} "
-            else:
-                char = self.SPINNER_CHARS[self.spinner_idx]
-                spinner_str = f"{color}{char}{reset} "
-
-        out_str = (
-            f"\r\033[K{self._prefix}"
-            # f"{color}{filled_bar}{gray}{empty_bar}{reset}"
-            f"{color}{filled_bar}{reset}{empty_bar}"
-            f" {spinner_str}"
-            f" {color}{self.curr_step}/{self.max_steps} {self.progress: 4.0%}{reset}"
-            f" {self._postfix}(ETA: {eta_str})"
-        )
-        sys.stdout.write(out_str)
-        sys.stdout.flush()
-
-    @staticmethod
-    def get_color_code(color: str) -> str:
-        """Retrieve the ANSI escape code for a specified color name.
-
-        Parameters
-        ----------
-        color : str
-            The name of the color to look up (e.g., 'red', 'BLUE').
-            Case-insensitive.
-
-        Returns
-        -------
-        str
-            The ANSI escape code string corresponding to the color.
-
-        Raises
-        ------
-        ValueError
-            If the requested color name does not exist within the available
-            ProgressBar attributes.
-        """
-        try:
-            getattr(ProgressBar, color.upper())
-        except AttributeError:
-            raise ValueError(
-                f"Color '{color}' not available."
-                " Available colors: [gray, red, green, yellow, blue]"
+            spinner_char = (
+                " ✓"
+                if self.curr_step >= self.max_steps or force_complete
+                else " " + self.SPINNER_CHARS[self.spinner_idx]
             )
+            spinner_str = self.term.format(spinner_char, fg=color)
 
-    @staticmethod
-    def format_text(txt: str, *, bold: bool = False, color: str | None = None) -> str:
-        """Return a formatted string with optionally added ANSI color and boldness.
+        bar = self.term.format(filled_bar, fg=color)
+        progress = self.term.format(
+            f"{self.curr_step}/{self.max_steps} {self.progress: 4.0%}", fg=color
+        )
+        return (
+            f"{self._prefix}{bar}{empty_bar}{spinner_str} {progress} "
+            f"{self._postfix}(ETA: {self._eta_str()})"
+        )
 
-        Parameters
-        ----------
-        txt : str
-            The text to be formatted.
-        bold : bool, optional
-            If True, applies bold styling to the text. Default is False.
-        color : str | None, optional
-            The color name to apply to the text (e.g., 'red', 'blue').
-            Only supported colors in ProgressBar are valid. Default is None.
+    def _render(self, force_complete: bool = False) -> str:
+        """Build one frame as a string, shrinking the bar so it fits the terminal."""
+        line = self._build(self.width, force_complete)
+        if not self.term.is_tty:
+            return line
+        
+        overflow = self.term.visible_len(line) - (self.term.width - 1)
+        if overflow > 0:
+            bar_width = max(self.MIN_BAR_WIDTH, self.width - overflow)
+            line = self._build(bar_width, force_complete)
+        return line
 
-        Returns
-        -------
-        str
-            The formatted string wrapped in the appropriate ANSI escape codes.
-        """
-        if not bold and not color:
-            return txt
-
-        bold_ansi = ProgressBar.BOLD if bold else ""
-        color_ansi = ProgressBar.get_color_code(color) if color else ""
-        reset_ansi = ProgressBar.RESET if color else ProgressBar.RESET_BOLD
-
-        return f"{bold_ansi}{color_ansi}{txt}{reset_ansi}"
+    def _draw_ui(self, force_complete: bool = False) -> None:
+        """Draw the current frame in place."""
+        self.term.redraw_line(self._render(force_complete))
 
     def update(self, increment: int = 1):
         """Update the current step.
@@ -252,29 +184,13 @@ class ProgressBar:
 
             self.progress = self.curr_step / self.max_steps
 
-    def log(self, message: str):
-        """Prints a log message above the active progress bar
-
-        Parameters
-        ----------
-        message : str
-            The message to be printed
-        """
-        with self._lock:
-            sys.stdout.write("\r\033[K")
-            sys.stdout.write(f"{message}\n")
-            self._draw_ui()
+    def log(self, message: str) -> None:
+        """Print a message above the bar."""
+        self.log_many((message,))
 
     def log_many(self, messages: Iterable[str]) -> None:
-        """Prints multiple log messages above the active progress bar.
-
-        Parameters
-        ----------
-        messages : Iterable[str]
-            A collection or generator of messages to be printed.
-        """
+        """Print several messages above the bar in a single write."""
+        lines = [part for m in messages for part in (str(m).splitlines() or [""])]
         with self._lock:
-            sys.stdout.write("\r\033[K")
-            for message in messages:
-                sys.stdout.write(f"{message}\n")
-            self._draw_ui()
+            footer = self._render() if self._active else ""
+            self.term.print_above(lines, footer=footer)
