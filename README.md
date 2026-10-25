@@ -121,7 +121,7 @@ with PycBar(max_steps=len(tasks) * 10, prefix="Initializing...") as bar:
 `pycman` includes a terminal utility (`TermMan`) that auto-detects terminal color capabilities (TrueColor, 256-color, or Basic) and environment variables (like `NO_COLOR` or `FORCE_COLOR`):
 
 ```python
-from pycman.term import TermMan, ColorLevel
+from pycman.term import TermMan
 
 # Initialize terminal manager
 term = TermMan()
