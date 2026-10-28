@@ -134,6 +134,66 @@ print(term.format("✨ Success! Operation complete.", fg="#00FFCC", bold=True))
 print(term.format("⚠️ Warning notice.", fg=(255, 140, 0), bg="black"))
 ```
 
+### 5. Custom Color Gradients and Logging
+
+You can customize the visual appearance of your progress bar by passing a custom color gradient (`ColorGradient`) for you progress bar. You to chain multiple color stops together (using pre-defined constants from `COLORS` or raw `Color(r, g, b)` instances) while also managing runtime output with configurable log levels.
+
+```python
+import time
+
+from pycman import PycBar
+from pycman.colors import COLORS, Color, ColorGradient
+
+# Create a custom 3-stop gradient (Cyan -> Magenta -> Yellow -> Lime green)
+custom_gradient = ColorGradient(
+    COLORS["cyan"],
+    COLORS["magenta"],
+    Color(255, 255, 0),  # Yellow
+    COLORS["bright_green"],
+)
+
+total_steps = 80
+
+# Initialize PycBar with our custom gradient and set minimum log level to INFO
+with PycBar(
+    max_steps=total_steps,
+    bar_width=50,
+    prefix="Syncing:",
+    postfix="[net]",
+    color_gradient=custom_gradient,
+    min_level="INFO",  # Filters out DEBUG logs
+) as bar:
+    for i in range(1, total_steps + 1):
+        time.sleep(0.06)
+
+        # Test logging at various levels
+        if i == 10:
+            bar.log(
+                "This DEBUG message will be hidden because min_level is INFO.",
+                loglevel="DEBUG",
+            )
+            bar.log("Establish secure connection established.", loglevel="INFO")
+        elif i == 20:
+            bar.log(
+                "Packet loss detected on channel 2, adjusting buffer.",
+                loglevel="WARNING",
+            )
+        elif i == 30:
+            bar.log_many(
+                [
+                    "Verifying checksum integrity...",
+                    "All blocks successfully validated.",
+                ],
+                loglevel="INFO",
+            )
+        elif i == 37:
+            bar.log("Critical sync timeout averted.", loglevel="ERROR")
+
+        bar.update(1)
+
+print("\n✨ Demo completed successfully!")
+```
+
 ---
 
 ## Features
