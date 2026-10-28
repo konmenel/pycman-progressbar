@@ -6,14 +6,17 @@ RGB: TypeAlias = tuple[int, int, int]
 
 
 class Color:
+    # TODO: Add initialisers from hex or names
     __slots__ = ("blue", "green", "red")
 
     red: int
     green: int
     blue: int
 
-    def __init__(self, rgb: RGB):
-        self.red, self.green, self.blue = rgb
+    def __init__(self, r, g, b):
+        self.red = r
+        self.green = g
+        self.blue = b
 
     def __iter__(self):
         """Allows unpacking (r, g, b = color) and conversion to list/tuple."""
@@ -33,17 +36,17 @@ class Color:
 
     def __add__(self, other: Color) -> Color:
         return Color(
-            (self.red + other.red, self.green + other.green, self.blue + other.blue)
+            self.red + other.red, self.green + other.green, self.blue + other.blue
         )
 
     def __sub__(self, other: Color) -> Color:
         return Color(
-            (self.red - other.red, self.green - other.green, self.blue - other.blue)
+            self.red - other.red, self.green - other.green, self.blue - other.blue
         )
 
     def __mul__(self, scalar: float) -> Color:
         return Color(
-            (int(self.red * scalar), int(self.green * scalar), int(self.blue * scalar))
+            int(self.red * scalar), int(self.green * scalar), int(self.blue * scalar)
         )
 
     def __rmul__(self, scalar: float) -> Color:
@@ -55,33 +58,33 @@ class Color:
 
 COLORS = {
     # Basic / ANSI-aligned colors
-    "black": Color((0, 0, 0)),
-    "white": Color((255, 255, 255)),
-    "red": Color((255, 0, 0)),
-    "green": Color((0, 128, 0)),
-    "blue": Color((0, 0, 255)),
-    "yellow": Color((255, 255, 0)),
-    "magenta": Color((255, 0, 255)),
-    "cyan": Color((0, 255, 255)),
-    "gray": Color((128, 128, 128)),
-    "dark_gray": Color((64, 64, 64)),
+    "black": Color(0, 0, 0),
+    "white": Color(255, 255, 255),
+    "red": Color(255, 0, 0),
+    "green": Color(0, 128, 0),
+    "blue": Color(0, 0, 255),
+    "yellow": Color(255, 255, 0),
+    "magenta": Color(255, 0, 255),
+    "cyan": Color(0, 255, 255),
+    "gray": Color(128, 128, 128),
+    "dark_gray": Color(64, 64, 64),
     # Extended popular colors
-    "orange": Color((255, 165, 0)),
-    "purple": Color((128, 0, 128)),
-    "pink": Color((255, 192, 203)),
-    "brown": Color((165, 42, 42)),
-    "navy": Color((0, 0, 128)),
-    "teal": Color((0, 128, 128)),
-    "maroon": Color((128, 0, 0)),
-    "olive": Color((128, 128, 0)),
-    "bright_green": Color((0, 255, 0)),
-    "lime": Color((0, 255, 0)),
-    "gold": Color((255, 215, 0)),
-    "coral": Color((255, 127, 80)),
-    "crimson": Color((220, 20, 60)),
-    "indigo": Color((75, 0, 130)),
-    "turquoise": Color((64, 224, 208)),
-    "violet": Color((238, 130, 238)),
+    "orange": Color(255, 165, 0),
+    "purple": Color(128, 0, 128),
+    "pink": Color(255, 192, 203),
+    "brown": Color(165, 42, 42),
+    "navy": Color(0, 0, 128),
+    "teal": Color(0, 128, 128),
+    "maroon": Color(128, 0, 0),
+    "olive": Color(128, 128, 0),
+    "bright_green": Color(0, 255, 0),
+    "lime": Color(0, 255, 0),
+    "gold": Color(255, 215, 0),
+    "coral": Color(255, 127, 80),
+    "crimson": Color(220, 20, 60),
+    "indigo": Color(75, 0, 130),
+    "turquoise": Color(64, 224, 208),
+    "violet": Color(238, 130, 238),
 }
 
 

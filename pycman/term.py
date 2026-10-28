@@ -84,13 +84,13 @@ class TermMan:
         if isinstance(color, Color):
             return color
         if isinstance(color, tuple):
-            return Color(color)
+            return Color(*color)
         if color.startswith("#") and len(color) == 7:
             try:
-                rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
+                rgb = (int(color[i : i + 2], 16) for i in (1, 3, 5))
             except ValueError:
                 raise ValueError(f"Invalid hex color {color!r}") from None
-            return Color(rgb)
+            return Color(*rgb)
         try:
             return COLORS[color.lower()]
         except KeyError:

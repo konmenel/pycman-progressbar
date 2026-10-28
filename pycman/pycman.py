@@ -6,7 +6,7 @@ from collections.abc import Iterable
 from enum import IntEnum
 
 from .colors import COLORS, Color, ColorGradient
-from .term import RGB, ColorLevel, TermMan
+from .term import ColorLevel, TermMan
 
 
 class LogLevel(IntEnum):
