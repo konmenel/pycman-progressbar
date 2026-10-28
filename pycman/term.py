@@ -9,9 +9,9 @@ from enum import IntEnum
 from typing import TextIO, TypeAlias
 
 from . import ansicodes
+from .colors import COLORS, Color
 
 RGB: TypeAlias = tuple[int, int, int]
-Color: TypeAlias = "str | RGB"  # "red", "#ff8800", or (255, 136, 0)
 
 
 class ColorLevel(IntEnum):
@@ -80,24 +80,27 @@ class TermMan:
 
     # ---------- color resolution ----------
     @staticmethod
-    def _to_rgb(color: Color) -> RGB | int:
-        if isinstance(color, tuple):
+    def _to_color(color: Color | str | RGB) -> Color:
+        if isinstance(color, Color):
             return color
+        if isinstance(color, tuple):
+            return Color(color)
         if color.startswith("#") and len(color) == 7:
             try:
-                r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
+                rgb = tuple(int(color[i : i + 2], 16) for i in (1, 3, 5))
             except ValueError:
                 raise ValueError(f"Invalid hex color {color!r}") from None
-            return r, g, b
+            return Color(rgb)
         try:
-            return ansicodes.NAMED[color.lower()]
+            return COLORS[color.lower()]
         except KeyError:
             raise ValueError(
-                f"Unknown color {color!r}. Available: {sorted(ansicodes.NAMED)}"
+                f"Unknown color {color!r}. Available: {sorted(COLORS)}"
             ) from None
 
     @staticmethod
-    def _rgb_to_256(r: int, g: int, b: int) -> int:
+    def _rgb_to_256(color: Color) -> int:
+        r, g, b = color.red, color.green, color.blue
         if r == g == b:  # grayscale ramp
             if r < 8:
                 return 16
@@ -109,7 +112,8 @@ class TermMan:
         )
 
     @staticmethod
-    def _rgb_to_basic(r: int, g: int, b: int) -> int:
+    def _rgb_to_basic(color: Color) -> int:
+        r, g, b = color.red, color.green, color.blue
         bright = max(r, g, b) > 170
         idx = (r > 127) | ((g > 127) << 1) | ((b > 127) << 2)
         return idx + (8 if bright and idx else 0)
@@ -117,14 +121,12 @@ class TermMan:
     def _color_seq(self, color: Color, *, background: bool) -> str:
         if self.color_level is ColorLevel.NONE:
             return ""
-        value = self._to_rgb(color)
+        value = self._to_color(color)
         basic, c256, rgb = (
             (ansicodes.bg_basic, ansicodes.bg_256, ansicodes.bg_rgb)
             if background
             else (ansicodes.fg_basic, ansicodes.fg_256, ansicodes.fg_rgb)
         )
-        if isinstance(value, int):
-            return basic(value)
         if self.color_level is ColorLevel.TRUECOLOR:
             return rgb(*value)
         if self.color_level is ColorLevel.ANSI256:

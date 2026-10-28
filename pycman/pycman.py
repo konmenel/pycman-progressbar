@@ -3,8 +3,37 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Iterable
+from enum import IntEnum
 
+from .colors import COLORS, Color, ColorGradient
 from .term import RGB, ColorLevel, TermMan
+
+
+class LogLevel(IntEnum):
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+
+    @classmethod
+    def parse(cls, value: str | LogLevel | None) -> LogLevel | None:
+        if value is None or isinstance(value, cls):
+            return value
+        try:
+            return cls[value.upper()]
+        except KeyError:
+            raise ValueError(
+                f"Unknown log level {value!r}. Available: {[l.name for l in cls]}"
+            ) from None
+
+
+# (label color, bold)
+LEVEL_STYLE = {
+    LogLevel.DEBUG: ("gray", False),
+    LogLevel.INFO: ("blue", False),
+    LogLevel.WARNING: ("yellow", True),
+    LogLevel.ERROR: ("red", True),
+}
 
 
 class PycBar:
@@ -23,17 +52,31 @@ class PycBar:
         bar_width: int = 40,
         prefix: str = "",
         postfix: str = "",
-        color_gradient: bool = True,
+        color_gradient: bool | ColorGradient = True,
         show_spinner: bool = True,
         term: TermMan | None = None,
+        min_level: LogLevel | str = LogLevel.DEBUG,
     ):
         self.term = term or TermMan()
         self.max_steps = max(1, max_steps)
         self.width = bar_width
         self.curr_step = 0
         self.progress = 0.0
+
         self.show_spinner = show_spinner
-        self.color_gradient = color_gradient and self.term.color_level > ColorLevel.NONE
+        if self.term.color_level == ColorLevel.NONE:
+            self._color_gradient = None
+        elif isinstance(color_gradient, ColorGradient):
+            self._color_gradient = color_gradient
+        elif color_gradient is True:
+            self._color_gradient = ColorGradient(
+                COLORS["red"],
+                COLORS["yellow"],
+                COLORS["lime"],
+            )
+        else:
+            self._color_gradient = None
+
         self._prefix = f"{prefix} " if prefix and not prefix[-1].isspace() else prefix
         self._postfix = (
             f"{postfix} " if postfix and not postfix[-1].isspace() else postfix
@@ -46,6 +89,7 @@ class PycBar:
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._animation_thread: threading.Thread | None = None
+        self.min_level = LogLevel.parse(min_level)
 
     @property
     def prefix(self):
@@ -98,20 +142,11 @@ class PycBar:
                     self.spinner_idx = (self.spinner_idx + 1) % len(self.SPINNER_CHARS)
             self._stop_event.wait(0.05)
 
-    def _gradient_rgb(self) -> RGB:
-        # TODO: Need to make it more generic. Work with any colors sequences
-        if self.progress < 0.5:
-            fraction = self.progress / 0.5
-            r = 255
-            g = int(fraction * 255)
-            b = 0
-        else:
-            fraction = (self.progress - 0.5) / 0.5
-            r = int((1.0 - fraction) * 255)
-            g = 255
-            b = 0
+    def _calculate_gradient(self) -> Color:
+        if not self._color_gradient:
+            return None
 
-        return r, g, b
+        return self._color_gradient.interpolate(self.progress)
 
     def _eta_str(self) -> str:
         if self.curr_step <= 0:
@@ -131,7 +166,7 @@ class PycBar:
         )
         empty_bar = self.REMAINING_CHAR * remain_width
 
-        color = self._gradient_rgb() if self.color_gradient else None
+        color = self._calculate_gradient() if self._color_gradient else None
 
         spinner_str = ""
         if self.show_spinner:
@@ -156,7 +191,7 @@ class PycBar:
         line = self._build(self.width, force_complete)
         if not self.term.is_tty:
             return line
-        
+
         overflow = self.term.visible_len(line) - (self.term.width - 1)
         if overflow > 0:
             bar_width = max(self.MIN_BAR_WIDTH, self.width - overflow)
@@ -184,13 +219,22 @@ class PycBar:
 
             self.progress = self.curr_step / self.max_steps
 
-    def log(self, message: str) -> None:
-        """Print a message above the bar."""
-        self.log_many((message,))
+    def log(self, message: str, loglevel: str | LogLevel | None = None) -> None:
+        self.log_many((message,), loglevel=loglevel)
 
-    def log_many(self, messages: Iterable[str]) -> None:
-        """Print several messages above the bar in a single write."""
+    def log_many(
+        self, messages: Iterable[str], loglevel: str | LogLevel | None = None
+    ) -> None:
+        level = LogLevel.parse(loglevel)
+        if level is not None and level < self.min_level:
+            return
+
         lines = [part for m in messages for part in (str(m).splitlines() or [""])]
+        if level is not None:
+            fg, bold = LEVEL_STYLE[level]
+            tag = self.term.format(f"{level.name:<7}", fg=fg, bold=bold)
+            lines = [f"{tag} {line}" for line in lines]
+
         with self._lock:
             footer = self._render() if self._active else ""
             self.term.print_above(lines, footer=footer)
