@@ -30,7 +30,7 @@ class LogLevel(IntEnum):
 # (label color, bold)
 LEVEL_STYLE = {
     LogLevel.DEBUG: ("gray", False),
-    LogLevel.INFO: ("blue", False),
+    LogLevel.INFO: ("blue", True),
     LogLevel.WARNING: ("yellow", True),
     LogLevel.ERROR: ("red", True),
 }
